@@ -1,44 +1,9 @@
-# Build folders
-[Bb]uild/
-[Bb]uild*/
-cmake-build-debug/
-
-.idea/
-
-# backup files
-*~
-
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
+build/
+buildVCPkg/
+vcpkg_installed/
+.vs/
 *.exe
+*.obj
+*.lib
+*.dll
 *.out
-*.app
-
-.DS_Store

@@ -3,8 +3,11 @@
 # path. ${CMAKE_SOURCE_DIR} is prefixed to allow the files in the
 # utest directory to correctly include the relative reference to the
 # src files.
-#
+# 
 include_directories(${CMAKE_SOURCE_DIR}/src)
+
+# Append Catch2 CMake module directory so include(Catch) can be located
+list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 
 enable_testing()
 include(CTest)
@@ -19,7 +22,9 @@ include(Catch)
 # 
 set(UTESTS 
   utest_Success
-  utest_Failure)
+  utest_Failure
+  utest_vec3
+)
 
 # 
 # For each of the executables named in ${UTESTS}, compile them into a
@@ -36,4 +41,3 @@ foreach(uexec ${UTESTS})
   # add_test(NAME ${uexec} COMMAND $<TARGET_FILE:${uexec}>)
   catch_discover_tests(${uexec})
 endforeach(uexec)
-
