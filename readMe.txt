@@ -5,10 +5,10 @@ How to build (hopefully)
 Using powershell type "cmake --preset default"
 
 2. Build the utest_vec3
-"cmake --build buildVCPkg --target utest_vec3"
+"cmake --build buildVCPkg --target utest_ray"
 
 3. Execute the unit test directly because there was an issue not doing it directly and im not sure why
-".\buildVCPkg\utests\utest_vec3.exe"
+".\buildVCPkg\utests\utest_ray.exe"
 
 4. Hopefully it runs
 
