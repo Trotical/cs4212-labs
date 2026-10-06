@@ -1,14 +1,11 @@
 #pragma once
 
-#include <glm/glm.hpp>
+#include "vec3.h"
 
 class ray {
 public:
-    using point3 = glm::vec3;
-    using vec3   = glm::vec3;
-
     // Default constructor
-    ray() : orig(0.0f), dir(0.0f) {}
+    ray() : orig(point3()), dir(vec3()) {}
 
     // Constructor with origin and direction
     ray(const point3& origin, const vec3& direction)
@@ -19,7 +16,7 @@ public:
     [[nodiscard]] vec3 direction() const { return dir; }
 
     // Parametric evaluation: P(t) = A + t*B
-    [[nodiscard]] point3 at(float t) const {
+    [[nodiscard]] point3 at(double t) const {
         return orig + t * dir;
     }
 
