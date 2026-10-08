@@ -1,10 +1,15 @@
 #pragma once
-#include "ray.h" 
+#include "vec3.h"
+#include "ray.h"
+
+struct HitRecord {
+    double t;
+    point3 p;
+    vec3 normal;
+};
 
 class Shape {
 public:
     virtual ~Shape() = default;
-    
-    // pure virtual function that all derived shapes must implement
-    virtual bool intersect(const ray& r) const = 0;
+    virtual bool intersect(const ray& r, HitRecord& rec) const = 0;
 };
