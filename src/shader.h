@@ -12,9 +12,8 @@ struct PointLight {
 };
 
 struct HitRecord;
-class Shape; // Forward declaration
+class Shape; 
 
-// Global ray tracing declaration so MirrorShader can cast secondary reflection rays
 color traceRay(
     const ray& r, 
     const std::vector<std::shared_ptr<Shape>>& world, 
@@ -23,7 +22,6 @@ color traceRay(
     int depth
 );
 
-// Base Abstract Shader Class
 class Shader {
 public:
     virtual ~Shader() = default;
@@ -37,7 +35,6 @@ public:
     ) const = 0;
 };
 
-// Helper function to check if a point is in shadow relative to a light source
 inline bool inShadow(
     const point3& point, 
     const point3& lightPos, 
@@ -50,16 +47,14 @@ inline bool inShadow(
     HitRecord rec;
     for (const auto& shape : world) {
         if (shape->intersect(shadowRay, rec)) {
-            // Shadow hit must occur before reaching the light source position
             if (rec.t > 0.001 && rec.t < lightDistance) {
-                return true; // Light is blocked
+                return true; 
             }
         }
     }
     return false;
 }
 
-// 1. Lambertian Shader with Shadows
 class Lambertian : public Shader {
 public:
     color albedo;
@@ -77,13 +72,11 @@ public:
         color totalLight(0.0, 0.0, 0.0);
 
         for (const auto& light : lights) {
-            // Skip light contribution if obstructed by an object
             if (inShadow(rec.p, light.position, world)) continue;
 
             vec3 L = unit_vector(light.position - rec.p);
             double nDotL = std::max(0.0, dot(rec.normal, L));
 
-            // Accumulate diffuse light scaled by light intensity vector
             totalLight += nDotL * albedo * light.intensity;
         }
 
@@ -91,7 +84,6 @@ public:
     }
 };
 
-// 2. Blinn-Phong Shader with Shadows
 class BlinnPhong : public Shader {
 public:
     color albedo;
@@ -113,7 +105,6 @@ public:
         vec3 V = unit_vector(-viewDir);
 
         for (const auto& light : lights) {
-            // Skip light contribution if obstructed by an object
             if (inShadow(rec.p, light.position, world)) continue;
 
             vec3 L = unit_vector(light.position - rec.p);
@@ -128,7 +119,6 @@ public:
                 specular = std::pow(specAngle, phongExp) * specularColor;
             }
 
-            // Accumulate diffuse + specular scaled by light intensity vector
             totalLight += (diffuse + specular) * light.intensity;
         }
 
@@ -137,7 +127,7 @@ public:
 };
 
 
-// 3. Normal Shader
+ 
 class NormalShader : public Shader {
 public:
     color rayColor(
@@ -152,8 +142,6 @@ public:
     }
 };
 
-// 4. Mirror Shader
-// 4. Mirror Shader
 class MirrorShader : public Shader {
 public:
     color rayColor(
@@ -166,14 +154,9 @@ public:
     ) const override {
         if (depth <= 0) return color(0, 0, 0);
 
-        // Incident ray direction normalized (pointing into the surface)
-        vec3 I = unit_vector(viewDir);
         
-        // Standard reflection formula: R = I - 2 * (I . N) * N
+        vec3 I = unit_vector(viewDir);
         vec3 R = I - 2.0 * dot(I, rec.normal) * rec.normal;
-
-        // Offset origin along normal to avoid self-intersection (shadow acne)
-        // Adjust sign depending on whether ray hits front or back face
         double directionSign = (dot(I, rec.normal) < 0) ? 1.0 : -1.0;
         ray reflectedRay(rec.p + 0.001 * directionSign * rec.normal, R);
 
