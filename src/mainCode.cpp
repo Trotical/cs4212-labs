@@ -13,7 +13,7 @@
 #include "triangle.h"
 #include "framebuffer.h"
 
-// Recursive scene traversal function
+// Recursive scene traversal function supporting reflections, lights, and shadows
 color traceRay(
     const ray& r, 
     const std::vector<std::shared_ptr<Shape>>& world, 
@@ -45,70 +45,84 @@ color traceRay(
     return background;
 }
 
-// Inside main() in src/mainCode.cpp
+int main(int argc, char* argv[]) {
+    // 1. Command-line resolution and output arguments: .\mainCode.exe 800 800 my_scene.png
+    int image_width = 500;
+    int image_height = 500;
+    std::string output_filename = "scene_output.png";
 
-std::vector<PointLight> lights = {
-    // Light1 (upper left)
-    { point3(-5.0, 8.0, 5.0), color(0.7, 0.6, 0.45) },
-    
-    // Light2 (upper right)
-    { point3(6.0, 6.0, 2.0),  color(0.35, 0.45, 0.7) }
-};
+    if (argc >= 3) {
+        image_width = std::stoi(argv[1]);
+        image_height = std::stoi(argv[2]);
+    }
+    if (argc >= 4) {
+        output_filename = argv[3];
+    }
 
-int main() {
-    const int image_width = 500;
-    const int image_height = 500;
+    std::cout << "Rendering custom scene: " << image_width << "x" << image_height 
+              << " -> " << output_filename << std::endl;
+
     const int max_depth = 5;
     Framebuffer fb(image_width, image_height);
 
-    point3 cameraOrigin(0.0, 3.0, 3.0);
-    color backgroundColor(0.5, 0.7, 1.0);
+    // Camera Setup
+    point3 cameraOrigin(0.0, 1.5, 2.5);
+    vec3 viewDir = unit_vector(vec3(0.0, 0.15, -1.0));
+    double focal_length = 0.4;
+    double plane_width = 0.5;
+    double plane_height = 0.5;
 
+    vec3 worldUp(0.0, 1.0, 0.0);
+    vec3 u_cam = unit_vector(cross(viewDir, worldUp));
+    vec3 v_cam = cross(u_cam, viewDir);
+
+    color backgroundColor(0.9, 0.2, 0.4);
+
+    // Point Lights Setup
     std::vector<PointLight> lights = {
         { point3(-5.0, 8.0, 5.0), color(0.7, 0.6, 0.45) },
         { point3(6.0, 6.0, 2.0),  color(0.35, 0.45, 0.7) }
     };
 
+    // Shaders Initialization
     auto greyLambert   = std::make_shared<Lambertian>(color(0.6, 0.6, 0.6));
-    auto yellowLambert = std::make_shared<Lambertian>(color(0.9, 0.8, 0.1));
+    auto yellowLambert = std::make_shared<Lambertian>(color(0.0, 0.1, 0.1));
     auto greenLambert  = std::make_shared<Lambertian>(color(0.2, 0.8, 0.2));
-    auto tealLambert   = std::make_shared<Lambertian>(color(0.2, 0.7, 0.7));
-    auto purpleLambert = std::make_shared<Lambertian>(color(0.6, 0.2, 0.8));
-
     auto redPhong      = std::make_shared<BlinnPhong>(color(0.8, 0.1, 0.1), 64.0);
     auto bluePhong     = std::make_shared<BlinnPhong>(color(0.1, 0.2, 0.8), 16.0);
-    auto orangePhong   = std::make_shared<BlinnPhong>(color(0.95, 0.5, 0.1), 32.0);
-
     auto normalShader  = std::make_shared<NormalShader>();
     auto mirrorShader  = std::make_shared<MirrorShader>();
 
+    // Custom World Geometry Setup
     std::vector<std::shared_ptr<Shape>> world;
 
-    // Ground
+    // Overhead Mirror Canopy
+    world.push_back(std::make_shared<Triangle>(point3(-4.0, 4.0, -1.0), point3(4.0, 4.0, -1.0), point3(4.0, 3.2, -5.0), mirrorShader));
+    world.push_back(std::make_shared<Triangle>(point3(-4.0, 4.0, -1.0), point3(4.0, 3.2, -5.0), point3(-4.0, 3.2, -5.0), mirrorShader));
+
+    // Left Vertical Pillar (Mirror)
+    world.push_back(std::make_shared<Triangle>(point3(-3.5, 0.0, -0.5), point3(-3.5, 4.0, -0.5), point3(-3.5, 4.0, -3.5), mirrorShader));
+    world.push_back(std::make_shared<Triangle>(point3(-3.5, 0.0, -0.5), point3(-3.5, 4.0, -3.5), point3(-3.5, 0.0, -3.5), mirrorShader));
+
+    // Right Vertical Pillar (Mirror)
+    world.push_back(std::make_shared<Triangle>(point3(3.5, 0.0, -0.5), point3(3.5, 4.0, -3.5), point3(3.5, 4.0, -0.5), mirrorShader));
+    world.push_back(std::make_shared<Triangle>(point3(3.5, 0.0, -0.5), point3(3.5, 0.0, -3.5), point3(3.5, 4.0, -3.5), mirrorShader));
+    
+    // Ground Floor
     world.push_back(std::make_shared<Triangle>(point3(-50,0,50), point3(50,0,50), point3(50,0,-50), greyLambert));
     world.push_back(std::make_shared<Triangle>(point3(-50,0,50), point3(50,0,-50), point3(-50,0,-50), greyLambert));
 
-    // Walls (Mirror)
-    world.push_back(std::make_shared<Triangle>(point3(-4,0,-6), point3(4,0,-6), point3(4,4,-6), mirrorShader));
-    world.push_back(std::make_shared<Triangle>(point3(-4,0,-6), point3(4,4,-6), point3(-4,4,-6), mirrorShader));
+    // Floating Triangle in da center
+    world.push_back(std::make_shared<Triangle>(point3(-0.5, 1.5, -2.5), point3(0.5, 1.5, -2.5), point3(0.0, 2.5, -3.0), yellowLambert));
 
-    // Floating Triangle
-    world.push_back(std::make_shared<Triangle>(point3(0.9,1.4,-0.6), point3(1.9,1.4,-0.6), point3(1.4,2.2,-1.1), yellowLambert));
+    // Cluster of orbs below the overhead mirror
+    world.push_back(std::make_shared<Sphere>(point3(-1.5, 0.6, -2.5), 0.6, redPhong));   // Left green orb
+    world.push_back(std::make_shared<Sphere>(point3( 1.5, 0.6, -2.5), 0.6, redPhong));     // Right red phong orb
+    world.push_back(std::make_shared<Sphere>(point3( 0.0, 0.5, -1.8), 0.5, normalShader));    // Front center blue orb
+    world.push_back(std::make_shared<Sphere>(point3(-0.8, 1.2, -3.5), 0.8, mirrorShader));  // Back left mirror orb
+    world.push_back(std::make_shared<Sphere>(point3( 0.8, 1.2, -3.5), 0.8, mirrorShader));  // Back right normal orb
 
-    // Spheres
-    world.push_back(std::make_shared<Sphere>(point3(-2.0, 0.8, -3.0), 0.8, greenLambert));
-    world.push_back(std::make_shared<Sphere>(point3(-1.1, 0.6, -1.2), 0.6, redPhong));
-    world.push_back(std::make_shared<Sphere>(point3(0.0, 0.9, -3.5), 0.9, normalShader));
-    world.push_back(std::make_shared<Sphere>(point3(0.3, 0.45, -1.6), 0.45, bluePhong));
-    world.push_back(std::make_shared<Sphere>(point3(2.0, 1.0, -3.0), 1.0, mirrorShader));
-    world.push_back(std::make_shared<Sphere>(point3(1.5, 0.5, 0.3), 0.5, mirrorShader));
-    world.push_back(std::make_shared<Sphere>(point3(-1.3, 0.45, 0.4), 0.45, tealLambert));
-
-    // Behind camera
-    world.push_back(std::make_shared<Sphere>(point3(0.3, 1.0, 5.0), 1.0, orangePhong));
-    world.push_back(std::make_shared<Sphere>(point3(2.4, 0.8, 4.8), 0.8, purpleLambert));
-
-    // Pixel render loop with 10x10 jittered sampling
+    // 6. Render Loop
     for (int y = 0; y < image_height; ++y) {
         for (int x = 0; x < image_width; ++x) {
             color pixelColor(0, 0, 0);
@@ -119,11 +133,11 @@ int main() {
                     double sub_x = (sx + ((double)rand() / RAND_MAX)) / samples;
                     double sub_y = (sy + ((double)rand() / RAND_MAX)) / samples;
 
-                    double u = (2.0 * (x + sub_x) / image_width) - 1.0;
-                    double v = 1.0 - (2.0 * (y + sub_y) / image_height);
+                    double px = ((x + sub_x) / image_width) - 0.5;
+                    double py = 0.5 - ((y + sub_y) / image_height);
 
-                    vec3 direction(u, v - 0.4, -1.0);
-                    ray r(cameraOrigin, direction);
+                    vec3 rayDir = unit_vector(focal_length * viewDir + (px * plane_width) * u_cam + (py * plane_height) * v_cam);
+                    ray r(cameraOrigin, rayDir);
 
                     pixelColor += traceRay(r, world, lights, backgroundColor, max_depth);
                 }
@@ -134,8 +148,8 @@ int main() {
         }
     }
 
-    fb.exportToPNG("scene_output.png");
-    std::cout << "Render complete: exported scene_output.png" << std::endl;
+    fb.exportToPNG(output_filename);
+    std::cout << "Render complete: exported " << output_filename << std::endl;
 
     return 0;
 }
