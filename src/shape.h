@@ -2,6 +2,7 @@
 #include <memory>
 #include "vec3.h"
 #include "ray.h"
+#include "aabb.h" // 1. Include your new AABB header
 
 // forward declaration tells C++ Shader is a class
 class Shader;
@@ -21,4 +22,5 @@ public:
     virtual ~Shape() = default;
 
     virtual bool intersect(const ray& r, HitRecord& rec) const = 0;
+    virtual bool bounding_box(aabb& output_box) const = 0;
 };

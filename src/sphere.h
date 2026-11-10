@@ -39,4 +39,11 @@ public:
 
         return true;
     }
+    bool bounding_box(aabb& output_box) const override {
+        output_box = aabb(
+            center - vec3(radius, radius, radius),
+            center + vec3(radius, radius, radius)
+        );
+        return true;
+    }
 };

@@ -3,7 +3,9 @@
 #include <memory>
 #include <cmath>
 #include <algorithm>
-#include <cstdlib>
+#include <cstdlib>  
+#include <iostream> 
+#include <chrono>
 
 #include "vec3.h"
 #include "ray.h"
@@ -12,8 +14,10 @@
 #include "sphere.h"
 #include "triangle.h"
 #include "framebuffer.h"
+#include "bvh.h"
 
 // Recursive scene traversal function supporting reflections, lights, and shadows
+// Recursive scene traversal function supporting BVH acceleration and shaders
 color traceRay(
     const ray& r, 
     const std::vector<std::shared_ptr<Shape>>& world, 
@@ -24,14 +28,13 @@ color traceRay(
     if (depth <= 0) return color(0, 0, 0);
 
     HitRecord closestHit;
+    closestHit.t = 1e9;
     bool hitAnything = false;
-    double closestSoFar = 1e9;
 
     for (const auto& shape : world) {
         HitRecord rec;
         if (shape->intersect(r, rec)) {
-            if (rec.t < closestSoFar) {
-                closestSoFar = rec.t;
+            if (rec.t < closestHit.t) {
                 closestHit = rec;
                 hitAnything = true;
             }
@@ -45,11 +48,33 @@ color traceRay(
     return background;
 }
 
+color traceRay(
+    const ray& r, 
+    const std::shared_ptr<Shape>& world_root,             // BVH root for fast ray intersection
+    const std::vector<std::shared_ptr<Shape>>& world,     // Flat vector for shaders (shadows/reflections)
+    const std::vector<PointLight>& lights, 
+    const color& background, 
+    int depth
+) {
+    if (depth <= 0) return color(0, 0, 0);
+
+    HitRecord closestHit;
+    closestHit.t = 1e9; // Initialize to max distance
+
+    // Fast BVH intersection test
+    if (world_root && world_root->intersect(r, closestHit)) {
+        if (closestHit.shader) {
+            return closestHit.shader->rayColor(closestHit, lights, r.direction(), depth, world, background);
+        }
+    }
+
+    return background;
+}
+
 int main(int argc, char* argv[]) {
-    // 1. Command-line resolution and output arguments: .\mainCode.exe 800 800 my_scene.png
     int image_width = 500;
     int image_height = 500;
-    std::string output_filename = "scene_output.png";
+    std::string output_filename = "scene_output2.png";
 
     if (argc >= 3) {
         image_width = std::stoi(argv[1]);
@@ -116,12 +141,16 @@ int main(int argc, char* argv[]) {
     world.push_back(std::make_shared<Triangle>(point3(-0.5, 1.5, -2.5), point3(0.5, 1.5, -2.5), point3(0.0, 2.5, -3.0), yellowLambert));
 
     // Cluster of orbs below the overhead mirror
-    world.push_back(std::make_shared<Sphere>(point3(-1.5, 0.6, -2.5), 0.6, redPhong));   // Left green orb
+    world.push_back(std::make_shared<Sphere>(point3(-1.5, 0.6, -2.5), 0.6, greenLambert));   // Left green orb
     world.push_back(std::make_shared<Sphere>(point3( 1.5, 0.6, -2.5), 0.6, redPhong));     // Right red phong orb
     world.push_back(std::make_shared<Sphere>(point3( 0.0, 0.5, -1.8), 0.5, normalShader));    // Front center blue orb
     world.push_back(std::make_shared<Sphere>(point3(-0.8, 1.2, -3.5), 0.8, mirrorShader));  // Back left mirror orb
     world.push_back(std::make_shared<Sphere>(point3( 0.8, 1.2, -3.5), 0.8, mirrorShader));  // Back right normal orb
 
+    auto bvh_root = std::make_shared<bvh_node>(world, 0, world.size());
+
+    std::cout << "BVH built successfully. Starting render timer...\n";
+    auto start_time = std::chrono::high_resolution_clock::now();
     // 6. Render Loop
     for (int y = 0; y < image_height; ++y) {
         for (int x = 0; x < image_width; ++x) {
@@ -138,8 +167,12 @@ int main(int argc, char* argv[]) {
 
                     vec3 rayDir = unit_vector(focal_length * viewDir + (px * plane_width) * u_cam + (py * plane_height) * v_cam);
                     ray r(cameraOrigin, rayDir);
+                    
+                    // this is for BVH usage
+                    pixelColor += traceRay(r, bvh_root, world, lights, backgroundColor, max_depth);
 
-                    pixelColor += traceRay(r, world, lights, backgroundColor, max_depth);
+                    // this is for linear usage
+                    // pixelColor += traceRay(r, world, lights, backgroundColor, max_depth);
                 }
             }
 
@@ -148,8 +181,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    fb.exportToPNG(output_filename);
-    std::cout << "Render complete: exported " << output_filename << std::endl;
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end_time - start_time;
 
+    std::cout << "Render complete in " << elapsed.count() << " seconds. Exported to " << output_filename << std::endl;
+
+    fb.exportToPNG(output_filename);
     return 0;
 }
