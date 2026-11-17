@@ -5,13 +5,14 @@
 #include <string>
 #include <iostream>
 #include "ISceneLoader.h"
-#include "SceneDataContainer.h"
 #include "SceneContainer.h"
 #include "vec3.h"
+#include "light.h"
 #include "shader.h"
 #include "sphere.h"
 #include "triangle.h"
 #include "camera.h"
+
 
 class SceneLoader : public ISceneLoader {
 private:
@@ -90,21 +91,29 @@ public:
         std::shared_ptr<Shader> createdShader = nullptr;
 
         if (shaderDesc.type == "diffuse" || shaderDesc.type == "lambertian") {
-            color diffuseColor(shaderDesc.diffuse.data.x, shaderDesc.diffuse.data.y, shaderDesc.diffuse.data.z);
-            createdShader = std::shared_ptr<Shader>(new Lambertian(diffuseColor));
+            color diffuseColor(
+                static_cast<double>(shaderDesc.diffuse.data.x),
+                static_cast<double>(shaderDesc.diffuse.data.y),
+                static_cast<double>(shaderDesc.diffuse.data.z)
+            );
+            createdShader = std::make_shared<Lambertian>(diffuseColor);
         } 
         else if (shaderDesc.type == "phong" || shaderDesc.type == "blinnphong") {
-            color diffuseColor(shaderDesc.diffuse.data.x, shaderDesc.diffuse.data.y, shaderDesc.diffuse.data.z);
-            createdShader = std::shared_ptr<Shader>(new BlinnPhong(
+            color diffuseColor(
+                static_cast<double>(shaderDesc.diffuse.data.x),
+                static_cast<double>(shaderDesc.diffuse.data.y),
+                static_cast<double>(shaderDesc.diffuse.data.z)
+            );
+            createdShader = std::make_shared<BlinnPhong>(
                 diffuseColor, 
                 static_cast<double>(shaderDesc.phongExp)
-            ));
+            );
         } 
         else if (shaderDesc.type == "mirror" || shaderDesc.type == "reflective") {
-            createdShader = std::shared_ptr<Shader>(new MirrorShader());
+            createdShader = std::make_shared<MirrorShader>();
         } 
         else {
-            createdShader = std::shared_ptr<Shader>(new Lambertian(color(0.5, 0.5, 0.5)));
+            createdShader = std::make_shared<Lambertian>(color(0.5, 0.5, 0.5));
         }
 
         if (createdShader && !shaderDesc.name.empty()) {
@@ -116,17 +125,16 @@ public:
 
         std::shared_ptr<Shader> assignedShader = nullptr;
         // Use shaderNameReference instead of materialName
+        
         auto it = m_shaderMap.find(shapeDesc.shaderNameReference);
         if (it != m_shaderMap.end()) {
             assignedShader = it->second;
         } else {
-            assignedShader = std::make_shared<Lambertian>(VEC3_H(0.7, 0.7, 0.7));
+            assignedShader = std::make_shared<Lambertian>(color(0.7, 0.7, 0.7));
         }
 
         if (shapeDesc.type == "sphere") {
             point3 center(shapeDesc.center.x, shapeDesc.center.y, shapeDesc.center.z);
-            
-            // Bypass std::make_shared forwarding quirks using standard new
             std::shared_ptr<Sphere> sphere = std::shared_ptr<Sphere>(
                 new Sphere(center, static_cast<double>(shapeDesc.radius), assignedShader)
             );

@@ -5,11 +5,8 @@
 #include <vector>
 #include "vec3.h"
 #include "ray.h"
-
-struct PointLight {
-    point3 position;
-    color intensity;
-};
+#include "shape.h"
+#include "light.h"
 
 struct HitRecord;
 class Shape; 

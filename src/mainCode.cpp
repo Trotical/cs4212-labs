@@ -15,6 +15,9 @@
 #include "triangle.h"
 #include "framebuffer.h"
 #include "bvh.h"
+#include "SceneLoader.h"
+#include "SceneParser_JSON.h"
+#include "camera.h"
 
 // Recursive scene traversal function supporting reflections, lights, and shadows
 // Recursive scene traversal function supporting BVH acceleration and shaders
@@ -72,86 +75,62 @@ color traceRay(
 }
 
 int main(int argc, char* argv[]) {
-    int image_width = 500;
-    int image_height = 500;
-    std::string output_filename = "scene_output2.png";
-
-    if (argc >= 3) {
-        image_width = std::stoi(argv[1]);
-        image_height = std::stoi(argv[2]);
-    }
-    if (argc >= 4) {
-        output_filename = argv[3];
+    if (argc < 5) {
+        std::cerr << "Usage: " << argv[0] << " <width> <height> <output.png> <scene.json>\n";
+        return 1;
     }
 
-    std::cout << "Rendering custom scene: " << image_width << "x" << image_height 
-              << " -> " << output_filename << std::endl;
+    int image_width = std::stoi(argv[1]);
+    int image_height = std::stoi(argv[2]);
+    std::string output_filename = argv[3];
+    std::string scene_filename = argv[4];
 
-    const int max_depth = 5;
-    Framebuffer fb(image_width, image_height);
+    std::cout << "Loading JSON scene: " << scene_filename 
+              << " (" << image_width << "x" << image_height << " -> " << output_filename << ")\n";
 
-    // Camera Setup
-    point3 cameraOrigin(0.0, 1.5, 2.5);
-    vec3 viewDir = unit_vector(vec3(0.0, 0.15, -1.0));
-    double focal_length = 0.4;
-    double plane_width = 0.5;
-    double plane_height = 0.5;
+    // 1. Parse JSON into SceneContainer
+    SceneContainer scene;
+    auto loader = std::make_shared<SceneLoader>(scene);
+    SceneParser_JSON parser(loader);
+    parser.parseFileData(scene_filename);
+
+    if (scene.cameras.empty()) {
+        std::cerr << "Error: No cameras found in " << scene_filename << "\n";
+        return 1;
+    }
+
+    // 2. Extract Camera Parameters
+    auto cam = std::dynamic_pointer_cast<PerspectiveCamera>(scene.cameras[0]);
+    if (!cam) {
+        std::cerr << "Error: Camera 0 is not a PerspectiveCamera.\n";
+        return 1;
+    }
+
+    point3 cameraOrigin(cam->origin.x, cam->origin.y, cam->origin.z);
+    vec3 viewDir = unit_vector(vec3(cam->viewDir.x, cam->viewDir.y, cam->viewDir.z));
+    double focal_length = cam->focal_length;
+    double plane_width = cam->plane_width;
+    double plane_height = plane_width * (static_cast<double>(image_height) / image_width);
 
     vec3 worldUp(0.0, 1.0, 0.0);
     vec3 u_cam = unit_vector(cross(viewDir, worldUp));
     vec3 v_cam = cross(u_cam, viewDir);
 
-    color backgroundColor(0.9, 0.2, 0.4);
-
-    // Point Lights Setup
-    std::vector<PointLight> lights = {
-        { point3(-5.0, 8.0, 5.0), color(0.7, 0.6, 0.45) },
-        { point3(6.0, 6.0, 2.0),  color(0.35, 0.45, 0.7) }
-    };
-
-    // Shaders Initialization
-    auto greyLambert   = std::make_shared<Lambertian>(color(0.6, 0.6, 0.6));
-    auto yellowLambert = std::make_shared<Lambertian>(color(0.0, 0.1, 0.1));
-    auto greenLambert  = std::make_shared<Lambertian>(color(0.2, 0.8, 0.2));
-    auto redPhong      = std::make_shared<BlinnPhong>(color(0.8, 0.1, 0.1), 64.0);
-    auto bluePhong     = std::make_shared<BlinnPhong>(color(0.1, 0.2, 0.8), 16.0);
-    auto normalShader  = std::make_shared<NormalShader>();
-    auto mirrorShader  = std::make_shared<MirrorShader>();
-
-    // Custom World Geometry Setup
-    std::vector<std::shared_ptr<Shape>> world;
-
-    // Overhead Mirror Canopy
-    world.push_back(std::make_shared<Triangle>(point3(-4.0, 4.0, -1.0), point3(4.0, 4.0, -1.0), point3(4.0, 3.2, -5.0), mirrorShader));
-    world.push_back(std::make_shared<Triangle>(point3(-4.0, 4.0, -1.0), point3(4.0, 3.2, -5.0), point3(-4.0, 3.2, -5.0), mirrorShader));
-
-    // Left Vertical Pillar (Mirror)
-    world.push_back(std::make_shared<Triangle>(point3(-3.5, 0.0, -0.5), point3(-3.5, 4.0, -0.5), point3(-3.5, 4.0, -3.5), mirrorShader));
-    world.push_back(std::make_shared<Triangle>(point3(-3.5, 0.0, -0.5), point3(-3.5, 4.0, -3.5), point3(-3.5, 0.0, -3.5), mirrorShader));
-
-    // Right Vertical Pillar (Mirror)
-    world.push_back(std::make_shared<Triangle>(point3(3.5, 0.0, -0.5), point3(3.5, 4.0, -3.5), point3(3.5, 4.0, -0.5), mirrorShader));
-    world.push_back(std::make_shared<Triangle>(point3(3.5, 0.0, -0.5), point3(3.5, 0.0, -3.5), point3(3.5, 4.0, -3.5), mirrorShader));
-    
-    // Ground Floor
-    world.push_back(std::make_shared<Triangle>(point3(-50,0,50), point3(50,0,50), point3(50,0,-50), greyLambert));
-    world.push_back(std::make_shared<Triangle>(point3(-50,0,50), point3(50,0,-50), point3(-50,0,-50), greyLambert));
-
-    // Floating Triangle in da center
-    world.push_back(std::make_shared<Triangle>(point3(-0.5, 1.5, -2.5), point3(0.5, 1.5, -2.5), point3(0.0, 2.5, -3.0), yellowLambert));
-
-    // Cluster of orbs below the overhead mirror
-    world.push_back(std::make_shared<Sphere>(point3(-1.5, 0.6, -2.5), 0.6, greenLambert));   // Left green orb
-    world.push_back(std::make_shared<Sphere>(point3( 1.5, 0.6, -2.5), 0.6, redPhong));     // Right red phong orb
-    world.push_back(std::make_shared<Sphere>(point3( 0.0, 0.5, -1.8), 0.5, normalShader));    // Front center blue orb
-    world.push_back(std::make_shared<Sphere>(point3(-0.8, 1.2, -3.5), 0.8, mirrorShader));  // Back left mirror orb
-    world.push_back(std::make_shared<Sphere>(point3( 0.8, 1.2, -3.5), 0.8, mirrorShader));  // Back right normal orb
+    // 3. Build BVH from loaded shapes
+    std::vector<std::shared_ptr<Shape>>& world = scene.shapes;
+    std::vector<PointLight>& lights = scene.lights;
+    color backgroundColor(0.1, 0.1, 0.15);
 
     auto bvh_root = std::make_shared<bvh_node>(world, 0, world.size());
 
-    std::cout << "BVH built successfully. Starting render timer...\n";
+    std::cout << "BVH built successfully (" << world.size() << " shapes, " 
+              << lights.size() << " lights). Starting render timer...\n";
     auto start_time = std::chrono::high_resolution_clock::now();
-    // 6. Render Loop
+
+    // 4. Render Loop
+    const int max_depth = 5;
+    Framebuffer fb(image_width, image_height);
+
     for (int y = 0; y < image_height; ++y) {
         for (int x = 0; x < image_width; ++x) {
             color pixelColor(0, 0, 0);
@@ -167,12 +146,8 @@ int main(int argc, char* argv[]) {
 
                     vec3 rayDir = unit_vector(focal_length * viewDir + (px * plane_width) * u_cam + (py * plane_height) * v_cam);
                     ray r(cameraOrigin, rayDir);
-                    
-                    // this is for BVH usage
-                    pixelColor += traceRay(r, bvh_root, world, lights, backgroundColor, max_depth);
 
-                    // this is for linear usage
-                    // pixelColor += traceRay(r, world, lights, backgroundColor, max_depth);
+                    pixelColor += traceRay(r, bvh_root, world, lights, backgroundColor, max_depth);
                 }
             }
 

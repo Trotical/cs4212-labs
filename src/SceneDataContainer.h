@@ -64,7 +64,7 @@ namespace sivelab
       : m_otype(SceneElementCreator::UNKNOWN_TYPE) {}
     virtual ~SceneElementCreator() {}
     
-    virtual void instance( ptree::value_type const &v ) = 0;
+    virtual void instance( ptree const &v ) = 0;
 
     SceneObjectType m_otype;
 

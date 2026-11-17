@@ -36,6 +36,7 @@ target_link_libraries(cs4212-util
 # 2. Define executable
 add_executable(mainCode
   mainCode.cpp
+  SceneParser_JSON.cpp
 )
 
 target_link_libraries(mainCode

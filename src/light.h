@@ -2,7 +2,7 @@
 
 #include "vec3.h"
 
-class PointLight {
+struct PointLight {
 public:
     point3 position;
     color intensity;
