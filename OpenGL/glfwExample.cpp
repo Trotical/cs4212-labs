@@ -11,8 +11,41 @@
 #include "glm/gtc/type_ptr.hpp"
 
 #include "GLSL.h"
-
 #include "camera.h"
+
+struct ShaderBundle {
+    sivelab::GLSLObject program;
+    GLint projMatrixID   = -1;
+    GLint viewMatrixID   = -1;
+    GLint modelMatrixID  = -1;
+    GLint normalMatrixID = -1;
+    GLint lightPosID     = -1;
+    GLint diffuseCompID  = -1;
+    GLint specularCompID = -1;
+    GLint phongExpID     = -1;
+    GLint camPosID       = -1;
+
+    void init(const char* vertPath, const char* fragPath, bool useDiffuse, bool useBlinnPhong) {
+        program.addShader(vertPath, sivelab::GLSLObject::VERTEX_SHADER);
+        program.addShader(fragPath, sivelab::GLSLObject::FRAGMENT_SHADER);
+        program.createProgram();
+
+        projMatrixID   = program.createUniform("projMatrix");
+        viewMatrixID   = program.createUniform("viewMatrix");
+        modelMatrixID  = program.createUniform("modelMatrix");
+        normalMatrixID = program.createUniform("normalMatrix");
+        lightPosID     = program.createUniform("lightPosWorld");
+
+        if (useDiffuse || useBlinnPhong) {
+            diffuseCompID = program.createUniform("diffuseComponent");
+        }
+        if (useBlinnPhong) {
+            specularCompID = program.createUniform("specularComponent");
+            phongExpID     = program.createUniform("phongExp");
+            camPosID       = program.createUniform("camPosWorld");
+        }
+    }
+};
 
 int CheckGLErrors(const char *s)
 {
@@ -83,15 +116,16 @@ int main(void)
     glGetIntegerv(GL_MAJOR_VERSION, &major_version);
     std::cout << "GL_MAJOR_VERSION: " << major_version << std::endl;
 
+    // VBO with positions and normals (6 floats per vertex)
     GLuint m_triangleVBO[1];
     glGenBuffers(1, m_triangleVBO);
     glBindBuffer(GL_ARRAY_BUFFER, m_triangleVBO[0]);
 
     std::vector<float> host_VertexBuffer{
-        // Position (x, y, z)      // Color (r, g, b)
-        -3.0f, -3.0f,  0.0f,        1.0f, 0.2f, 0.3f,  // V0
-         3.0f, -3.0f,  0.0f,        0.2f, 0.9f, 0.4f,  // V1
-         0.0f,  3.0f,  0.0f,        0.2f, 0.5f, 1.0f   // V2
+        // Position (x, y, z)      // Normal (nx, ny, nz)
+        -3.0f, -3.0f,  0.0f,        0.0f, 0.0f, 1.0f,  // V0
+         3.0f, -3.0f,  0.0f,        0.0f, 0.0f, 1.0f,  // V1
+         0.0f,  3.0f,  0.0f,        0.0f, 0.0f, 1.0f   // V2
     };
 
     GLsizeiptr numBytes = static_cast<GLsizeiptr>(host_VertexBuffer.size() * sizeof(float));
@@ -99,41 +133,37 @@ int main(void)
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     host_VertexBuffer.clear();
 
-    // Triangle VAO
+    // VAO: location 0 = position, location 1 = normal
     GLuint m_VAO;
     glGenVertexArrays(1, &m_VAO);
     glBindVertexArray(m_VAO);
     glBindBuffer(GL_ARRAY_BUFFER, m_triangleVBO[0]);
 
-    // Location 0: position (3 floats, stride = 6 floats, offset = 0)
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (void*)0);
 
-    // Location 1: color (3 floats, stride = 6 floats, offset = 3 floats)
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (void*)(3 * sizeof(GLfloat)));
 
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    sivelab::GLSLObject shader;
-    shader.addShader("vertexShader_withMatrixTransformation.glsl", sivelab::GLSLObject::VERTEX_SHADER);
-    shader.addShader("fragmentShader_barycentric.glsl", sivelab::GLSLObject::FRAGMENT_SHADER);
-    shader.createProgram();
+    // Load all 3 shader modes upfront
+    const char* vertPath = "vertexShader_PrepForPerFragment.glsl";
+    ShaderBundle lambertShader, blinnPhongShader, normalShader;
+    lambertShader.init(vertPath, "fragmentShader_lambertian.glsl", true, false);
+    blinnPhongShader.init(vertPath, "fragmentShader_blinnPhong.glsl", true, true);
+    normalShader.init(vertPath, "fragmentShader_normal.glsl", false, false);
 
-    GLint modelMatrixID = shader.createUniform("modelMatrix");
-    GLint viewMatrixID = shader.createUniform("viewMatrix");
-    GLint projMatrixID = shader.createUniform("projMatrix");
+    int shaderMode = 1; // 1 = Lambertian, 2 = Blinn-Phong, 3 = Normal
+    std::cout << "Shader mode: 1 = Lambertian, 2 = Blinn-Phong, 3 = Normal" << std::endl;
 
-    glm::vec3 m_pos(0.0f, 0.0f, 0.0f);
-    glm::vec3 m_viewDir(0.0f, 0.0f, -1.0f);
-    glm::vec3 m_U(1.0f, 0.0f, 0.0f);
-    glm::vec3 m_V(0.0f, 1.0f, 0.0f);
-    glm::vec3 m_W(0.0f, 0.0f, 1.0f);
+    glm::vec4 lightPosWorld(2.0f, 4.0f, 8.0f, 1.0f);
+    glm::vec3 diffuseColor(0.2f, 0.6f, 1.0f);
+    glm::vec3 specularColor(1.0f, 1.0f, 1.0f);
+    float phongExp = 32.0f;
 
     double timeDiff = 0.0, startFrameTime = 0.0, endFrameTime = 0.0;
-
-    
 
     while (!glfwWindowShouldClose(window))
     {
@@ -147,36 +177,68 @@ int main(void)
         glm::mat4 M_model(1.0f);
         M_model = glm::rotate(M_model, angle * 0.25f, glm::vec3(0.0f, 0.0f, 1.0f));
 
-        glm::mat4 M_view = glm::lookAt(m_pos, m_pos - m_W, m_V);
+        glm::mat4 normalMatrix = glm::transpose(glm::inverse(M_model));
+        glm::mat4 M_view = cam.getViewMatrix();
         glm::mat4 M_proj = usePerspective
-         ? cam.getPerspectiveMatrix(aspectRatio, 0.1f, 100.0f)
-         : M_ortho;
-        /* Render objects here */
-        shader.activate();
-        glUniformMatrix4fv(modelMatrixID, 1, GL_FALSE, glm::value_ptr(M_model));
-        glUniformMatrix4fv(viewMatrixID, 1, GL_FALSE, glm::value_ptr(M_view));
-        glUniformMatrix4fv(projMatrixID, 1, GL_FALSE, glm::value_ptr(M_proj));
+            ? cam.getPerspectiveMatrix(aspectRatio, 0.1f, 100.0f)
+            : M_ortho;
+
+        ShaderBundle* active = &lambertShader;
+        if (shaderMode == 2) active = &blinnPhongShader;
+        else if (shaderMode == 3) active = &normalShader;
+
+        active->program.activate();
+        glUniformMatrix4fv(active->projMatrixID, 1, GL_FALSE, glm::value_ptr(M_proj));
+        glUniformMatrix4fv(active->viewMatrixID, 1, GL_FALSE, glm::value_ptr(M_view));
+        glUniformMatrix4fv(active->modelMatrixID, 1, GL_FALSE, glm::value_ptr(M_model));
+        glUniformMatrix4fv(active->normalMatrixID, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+        glUniform4fv(active->lightPosID, 1, glm::value_ptr(lightPosWorld));
+
+        if (shaderMode == 1 || shaderMode == 2) {
+            glUniform3fv(active->diffuseCompID, 1, glm::value_ptr(diffuseColor));
+        }
+        if (shaderMode == 2) {
+            glUniform3fv(active->specularCompID, 1, glm::value_ptr(specularColor));
+            glUniform1f(active->phongExpID, phongExp);
+            glUniform3fv(active->camPosID, 1, glm::value_ptr(cam.origin));
+        }
 
         glBindVertexArray(m_VAO);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glBindVertexArray(0);
-        shader.deactivate();
+        active->program.deactivate();
 
         glfwSwapBuffers(window);
         glfwPollEvents();
-       
+
+        if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS && shaderMode != 1) {
+            shaderMode = 1;
+            std::cout << "Switched to Lambertian shader" << std::endl;
+        }
+        if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS && shaderMode != 2) {
+            shaderMode = 2;
+            std::cout << "Switched to Blinn-Phong shader" << std::endl;
+        }
+        if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS && shaderMode != 3) {
+            shaderMode = 3;
+            std::cout << "Switched to Normal shader" << std::endl;
+        }
+
         float moveRatePerFrame = 0.05f;
+        glm::vec3 fwd = glm::normalize(cam.viewDir);
+        glm::vec3 right = glm::normalize(glm::cross(fwd, cam.upDir));
+
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-            m_pos = m_pos + (-m_W) * moveRatePerFrame;
+            cam.origin += fwd * moveRatePerFrame;
         }
-        else if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-            m_pos = m_pos - m_U * moveRatePerFrame;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+            cam.origin -= fwd * moveRatePerFrame;
         }
-        else if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-            m_pos = m_pos + m_W * moveRatePerFrame;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+            cam.origin -= right * moveRatePerFrame;
         }
-        else if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-            m_pos = m_pos + m_U * moveRatePerFrame;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+            cam.origin += right * moveRatePerFrame;
         }
 
         if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) {
