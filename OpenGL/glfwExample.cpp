@@ -12,6 +12,8 @@
 
 #include "GLSL.h"
 
+#include "camera.h"
+
 int CheckGLErrors(const char *s)
 {
     int errCount = 0;
@@ -59,7 +61,7 @@ int main(void)
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
-    glClearColor(0.7f, 0.4f, 0.2f, 1.0f);
+    glClearColor(0.9f, 0.8f, 0.5f, 1.0f);
 
     int fb_width, fb_height;
     glfwGetFramebufferSize(window, &fb_width, &fb_height);
@@ -67,7 +69,15 @@ int main(void)
 
     float halfWidth = 15.0f / 2.0f;
     float halfHeight = halfWidth / aspectRatio;
-    glm::mat4 projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, -10.0f, 10.0f);
+    float nearPlane = 5.0f;
+    float farPlane = -5.0f;
+    glm::mat4 M_ortho = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, nearPlane, farPlane);
+
+    PerspectiveCamera cam;
+    cam.origin = glm::vec3(0.0f, 0.0f, 8.0f);
+    cam.viewDir = glm::vec3(0.0f, 0.0f, -1.0f);
+    cam.upDir = glm::vec3(0.0f, 1.0f, 0.0f);
+    bool usePerspective = true;
 
     GLint major_version;
     glGetIntegerv(GL_MAJOR_VERSION, &major_version);
@@ -79,9 +89,9 @@ int main(void)
 
     std::vector<float> host_VertexBuffer{
         // Position (x, y, z)      // Color (r, g, b)
-        -0.6f, -0.4f,  0.0f,        1.0f, 0.2f, 0.3f,  // V0
-         0.6f, -0.4f,  0.0f,        0.2f, 0.9f, 0.4f,  // V1
-         0.0f,  0.65f, 0.0f,        0.2f, 0.5f, 1.0f   // V2
+        -3.0f, -3.0f,  0.0f,        1.0f, 0.2f, 0.3f,  // V0
+         3.0f, -3.0f,  0.0f,        0.2f, 0.9f, 0.4f,  // V1
+         0.0f,  3.0f,  0.0f,        0.2f, 0.5f, 1.0f   // V2
     };
 
     GLsizeiptr numBytes = static_cast<GLsizeiptr>(host_VertexBuffer.size() * sizeof(float));
@@ -89,16 +99,17 @@ int main(void)
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     host_VertexBuffer.clear();
 
+    // Triangle VAO
     GLuint m_VAO;
     glGenVertexArrays(1, &m_VAO);
     glBindVertexArray(m_VAO);
     glBindBuffer(GL_ARRAY_BUFFER, m_triangleVBO[0]);
 
-    // Location 0 position (3 floats, stride = 6 floats, offset = 0)
+    // Location 0: position (3 floats, stride = 6 floats, offset = 0)
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (void*)0);
 
-    // Location 1 color (3 floats, stride = 6 floats, offset = 3 floats)
+    // Location 1: color (3 floats, stride = 6 floats, offset = 3 floats)
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (void*)(3 * sizeof(GLfloat)));
 
@@ -106,13 +117,24 @@ int main(void)
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     sivelab::GLSLObject shader;
-    shader.addShader("vertexShader.glsl", sivelab::GLSLObject::VERTEX_SHADER);
-    shader.addShader("fragmentShader.glsl", sivelab::GLSLObject::FRAGMENT_SHADER);
+    shader.addShader("vertexShader_withMatrixTransformation.glsl", sivelab::GLSLObject::VERTEX_SHADER);
+    shader.addShader("fragmentShader_barycentric.glsl", sivelab::GLSLObject::FRAGMENT_SHADER);
     shader.createProgram();
+
+    GLint modelMatrixID = shader.createUniform("modelMatrix");
+    GLint viewMatrixID = shader.createUniform("viewMatrix");
+    GLint projMatrixID = shader.createUniform("projMatrix");
+
+    glm::vec3 m_pos(0.0f, 0.0f, 0.0f);
+    glm::vec3 m_viewDir(0.0f, 0.0f, -1.0f);
+    glm::vec3 m_U(1.0f, 0.0f, 0.0f);
+    glm::vec3 m_V(0.0f, 1.0f, 0.0f);
+    glm::vec3 m_W(0.0f, 0.0f, 1.0f);
 
     double timeDiff = 0.0, startFrameTime = 0.0, endFrameTime = 0.0;
 
     
+
     while (!glfwWindowShouldClose(window))
     {
         endFrameTime = glfwGetTime();
@@ -121,8 +143,20 @@ int main(void)
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        float angle = static_cast<float>(glfwGetTime()) * 0.5f;
+        glm::mat4 M_model(1.0f);
+        M_model = glm::rotate(M_model, angle * 0.25f, glm::vec3(0.0f, 0.0f, 1.0f));
+
+        glm::mat4 M_view = glm::lookAt(m_pos, m_pos - m_W, m_V);
+        glm::mat4 M_proj = usePerspective
+         ? cam.getPerspectiveMatrix(aspectRatio, 0.1f, 100.0f)
+         : M_ortho;
         /* Render objects here */
         shader.activate();
+        glUniformMatrix4fv(modelMatrixID, 1, GL_FALSE, glm::value_ptr(M_model));
+        glUniformMatrix4fv(viewMatrixID, 1, GL_FALSE, glm::value_ptr(M_view));
+        glUniformMatrix4fv(projMatrixID, 1, GL_FALSE, glm::value_ptr(M_proj));
+
         glBindVertexArray(m_VAO);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glBindVertexArray(0);
@@ -130,6 +164,20 @@ int main(void)
 
         glfwSwapBuffers(window);
         glfwPollEvents();
+       
+        float moveRatePerFrame = 0.05f;
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+            m_pos = m_pos + (-m_W) * moveRatePerFrame;
+        }
+        else if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+            m_pos = m_pos - m_U * moveRatePerFrame;
+        }
+        else if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+            m_pos = m_pos + m_W * moveRatePerFrame;
+        }
+        else if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+            m_pos = m_pos + m_U * moveRatePerFrame;
+        }
 
         if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) {
             std::cout << "fps: " << 1.0 / timeDiff << std::endl;
